@@ -232,7 +232,7 @@ function showSetup() {
   game = null; round = null; stopAudio();
   $top.innerHTML = "";
   render(`
-    <header class="hero"><h1 class="brand">Pop Music<br>Quiz</h1><p class="sub">Training ground for melomaniacs.</p></header>
+    <header class="hero"><h1 class="brand">Pop Music Quiz</h1><p class="sub">Training ground for melomaniacs.</p></header>
     <div class="opts" id="opts"></div>
     <div class="names" id="names"></div>
     <button class="primary" id="start">Start</button>
