@@ -270,6 +270,26 @@ function renderNames() {
 
 /* ================= game ================= */
 
+/* ---------- don't repeat songs across games ----------
+   Each device remembers what it has played. New games draw unplayed songs first;
+   a song only comes back once the whole category has been heard, oldest first. */
+const PLAYED_KEY = "snippet:played";
+const songKey = s => s.artist + " | " + s.title;
+function loadPlayed() { try { return JSON.parse(localStorage.getItem(PLAYED_KEY) || "[]"); } catch (e) { return []; } }
+function markPlayed(song) {
+  const k = songKey(song);
+  let p = loadPlayed().filter(x => x !== k);
+  p.push(k);
+  if (p.length > 4000) p = p.slice(-4000);
+  try { localStorage.setItem(PLAYED_KEY, JSON.stringify(p)); } catch (e) {}
+}
+function freshFirst(pool) {
+  const order = new Map(loadPlayed().map((k, i) => [k, i]));
+  const unplayed = shuffle(pool.filter(s => !order.has(songKey(s))));
+  const played = pool.filter(s => order.has(songKey(s))).sort((a, b) => order.get(songKey(a)) - order.get(songKey(b)));
+  return unplayed.concat(played);
+}
+
 function startGame() {
   const pool = SONGS.filter(s => prefs.decade === "all" || s.decade === prefs.decade);
   game = {
@@ -278,7 +298,7 @@ function startGame() {
     decade: prefs.decade,
     total: prefs.rounds,
     names: prefs.names.slice(0, prefs.players === 1 ? 1 : prefs.vsCount).map((n, i) => (n || "").trim() || `Player ${i + 1}`),
-    queue: shuffle(pool.slice()),
+    queue: freshFirst(pool),
     scores: Array(prefs.players === 1 ? 1 : prefs.vsCount).fill(0),
     history: [],
     index: 0,
@@ -328,6 +348,7 @@ async function loadRound() {
     return;
   }
   g.next = takeNext();   // prefetch while this one plays
+  markPlayed(item.song);
   round = {
     song: item.song,
     data: item.data,
