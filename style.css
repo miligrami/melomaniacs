@@ -242,3 +242,10 @@ input.text:disabled { opacity: 1; }
   .sleeve .slide { animation: none; transform: translateX(36%); }
   .fade, .menu { animation: none; }
 }
+
+/* don't-play-again link on the reveal */
+.veto { margin-top: 6px; background: none; border: 0; padding: 6px 10px; font: inherit; font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 55%, transparent); text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--ink) 25%, transparent); cursor: pointer; border-radius: 8px; }
+.veto:hover { color: var(--ink); }
+.veto[aria-pressed="true"] { color: var(--orange); text-decoration: none; }

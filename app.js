@@ -283,7 +283,17 @@ function markPlayed(song) {
   if (p.length > 4000) p = p.slice(-4000);
   try { localStorage.setItem(PLAYED_KEY, JSON.stringify(p)); } catch (e) {}
 }
+/* "Don't play this again": a per-device blocklist the player controls */
+const BLOCK_KEY = "snippet:blocked";
+function loadBlocked() { try { return new Set(JSON.parse(localStorage.getItem(BLOCK_KEY) || "[]")); } catch (e) { return new Set(); } }
+function setBlocked(song, on) {
+  const b = loadBlocked(); const k = songKey(song);
+  on ? b.add(k) : b.delete(k);
+  try { localStorage.setItem(BLOCK_KEY, JSON.stringify([...b])); } catch (e) {}
+}
 function freshFirst(pool) {
+  const blocked = loadBlocked();
+  if (pool.length - blocked.size > 40) pool = pool.filter(s => !blocked.has(songKey(s)));
   const order = new Map(loadPlayed().map((k, i) => [k, i]));
   const unplayed = shuffle(pool.filter(s => !order.has(songKey(s))));
   const played = pool.filter(s => order.has(songKey(s))).sort((a, b) => order.get(songKey(a)) - order.get(songKey(b)));
@@ -601,7 +611,16 @@ function reveal() {
       <div class="yours">${yours}</div>
       <button class="primary" id="next">${last ? "See results" : "Next"}</button>
       <p class="hint"><kbd>Enter</kbd> to continue</p>
+      <button class="veto" id="veto" type="button" aria-pressed="false">Don't play this song again</button>
     </div>`;
+  const veto = document.getElementById("veto");
+  veto.addEventListener("click", () => {
+    const on = veto.getAttribute("aria-pressed") !== "true";
+    setBlocked(s, on);
+    veto.setAttribute("aria-pressed", String(on));
+    veto.textContent = on ? "Won't play again · Undo" : "Don't play this song again";
+    document.getElementById("next").focus();
+  });
   document.getElementById("next").addEventListener("click", nextRound);
   document.getElementById("next").focus();
   updatePlayIcon();
@@ -676,7 +695,7 @@ document.addEventListener("keydown", e => {
 document.getElementById("home").addEventListener("click", showSetup);
 
 // expose for testing
-window.__snippet = { norm, isMatch, artistVariants, titleVariants, scoreResult, resolveSong, stripExtras };
+window.__snippet = { loadBlocked, freshFirst, norm, isMatch, artistVariants, titleVariants, scoreResult, resolveSong, stripExtras };
 
 showSetup();
 })();
