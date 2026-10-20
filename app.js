@@ -291,6 +291,17 @@ function setBlocked(song, on) {
   on ? b.add(k) : b.delete(k);
   try { localStorage.setItem(BLOCK_KEY, JSON.stringify([...b])); } catch (e) {}
 }
+// When the song list changes, start the history over — otherwise every new game would be
+// front-loaded with just the newly added songs.
+(function resetHistoryOnNewPool() {
+  const sig = SONGS.length + ":" + songKey(SONGS[0]) + ":" + songKey(SONGS[SONGS.length - 1]);
+  try {
+    if (localStorage.getItem("snippet:poolsig") !== sig) {
+      localStorage.removeItem(PLAYED_KEY);
+      localStorage.setItem("snippet:poolsig", sig);
+    }
+  } catch (e) {}
+})();
 function freshFirst(pool) {
   const blocked = loadBlocked();
   if (pool.length - blocked.size > 40) pool = pool.filter(s => !blocked.has(songKey(s)));
