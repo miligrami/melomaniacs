@@ -45,8 +45,11 @@ function lev(a, b) {
 function tolerance(len) { return len <= 3 ? 0 : len <= 6 ? 1 : len <= 12 ? 2 : 3; }
 
 function artistVariants(song) {
-  const parts = song.artist.split(/\s*(?:&|,|\bx\b|\band\b|\bvs\.?)\s*/i);
-  return [...new Set([song.artist, ...parts, ...song.aliases].map(norm).filter(Boolean))];
+  const parts = song.artist.split(/\s*(?:&|,|\bx\b|\band\b|\bvs\.?|\bfeat\.?|\bwith\b)\s*/i);
+  const raw = [song.artist, ...parts, ...song.aliases];
+  // stylised spellings: P!nk → pink, Ke$ha → kesha, *NSYNC → nsync
+  raw.slice().forEach(r => raw.push(r.replace(/!/g, "i").replace(/\$/g, "s").replace(/\*/g, "")));
+  return [...new Set(raw.map(norm).filter(Boolean))];
 }
 function titleVariants(song) {
   const v = [song.title, stripExtras(song.title)];
@@ -54,16 +57,32 @@ function titleVariants(song) {
   v.push(song.title.replace(/[\(\)\[\]]/g, " "));
   return [...new Set(v.map(norm).filter(Boolean))];
 }
-function isMatch(answer, variants) {
+function closeEnough(ac, vc) {
+  if (ac === vc) return true;
+  // typos are forgiven, but not dropping whole words ("Confessions" ≠ "Confessions Part II")
+  const tol = tolerance(vc.length);
+  return Math.abs(ac.length - vc.length) <= Math.max(1, tol - 1) && lev(ac, vc) <= tol;
+}
+function isMatch(answer, variants, multi = false) {
   const a = norm(answer);
   if (!a) return false;
   const ac = a.replace(/ /g, "");
+  if (variants.some(v => a === v || closeEnough(ac, v.replace(/ /g, "")))) return true;
+  // several names typed at once ("justin bieber kid laroy", "rihanna and drake"):
+  // right if any one name in the answer matches one of the credited artists
+  if (!multi) return false;
+  const words = a.split(" ");
+  const chunks = answer.split(/\s*(?:&|,|\+|\/|\band\b|\bx\b|\bfeat\.?|\bft\.?|\bwith\b)\s*/i).map(norm).filter(Boolean);
+  if (chunks.length > 1 && chunks.some(c => variants.some(v => closeEnough(c.replace(/ /g, ""), v.replace(/ /g, ""))))) return true;
   return variants.some(v => {
-    const vc = v.replace(/ /g, "");
-    if (a === v || ac === vc) return true;
-    // typos are forgiven, but not dropping whole words ("Confessions" ≠ "Confessions Part II")
-    const tol = tolerance(vc.length);
-    return Math.abs(ac.length - vc.length) <= Math.max(1, tol - 1) && lev(ac, vc) <= tol;
+    const k = v.split(" ").length, vc = v.replace(/ /g, "");
+    if (vc.length < 4 || words.length <= k) return false;   // short names only count as a whole answer
+    for (let i = 0; i + k <= words.length; i++)
+      for (const w of [k, k + 1, k - 1]) {
+        if (w < 1 || i + w > words.length) continue;
+        if (closeEnough(words.slice(i, i + w).join(""), vc)) return true;
+      }
+    return false;
   });
 }
 
@@ -554,7 +573,7 @@ function submitAnswer(player, gaveUp) {
       const p = inp.dataset.part;
       if (round.solved[p]) return;
       answers[p] = inp.value.trim();
-      const ok = isMatch(answers[p], p === "artist" ? artistVariants(round.song) : titleVariants(round.song));
+      const ok = p === "artist" ? isMatch(answers[p], artistVariants(round.song), true) : isMatch(answers[p], titleVariants(round.song));
       if (ok) { round.solved[p] = true; gained.push(p); }
     });
   }
@@ -602,9 +621,25 @@ function reveal() {
       if (wrong.length) yours = `You said ${wrong.join(" / ")}`;
     }
   } else {
-    chips = round.attempts.filter(a => a.gained.length).map(a =>
-      `<span class="chip ok"><span class="dot p${a.player + 1}"></span>&nbsp;${esc(game.names[a.player])} +${a.gained.length}</span>`).join("")
-      || `<span class="chip">No points</span>`;
+    // one clear row per player: what they typed, right or wrong, and the points it earned
+    const rows = game.names.map((name, i) => {
+      const at = round.attempts.find(x => x.player === i);
+      let said;
+      if (!at) said = `<span class="vr-none">didn't buzz</span>`;
+      else if (at.gaveUp) said = `<span class="vr-none">passed</span>`;
+      else said = parts.map(p => {
+        const typed = (at.answers[p] || "").trim();
+        if (!typed) return "";
+        const ok = at.gained.includes(p);
+        return `<span class="vr-ans ${ok ? "ok" : "no"}">${ok ? "✓" : "✗"} ${esc(typed)}</span>`;
+      }).join("") || `<span class="vr-none">no answer</span>`;
+      const pts = at ? at.gained.length : 0;
+      return `<div class="vrow p${i + 1}${pts ? " scored" : ""}">
+        <span class="vr-name"><span class="dot p${i + 1}"></span>${esc(name)}</span>
+        <span class="vr-said">${said}</span>
+        <span class="vr-pts">${pts ? "+" + pts : "0"}</span></div>`;
+    }).join("");
+    chips = `<div class="vrows">${rows}</div>`;
   }
   topScore();
   const last = game.index + 1 >= game.total;
@@ -659,8 +694,9 @@ function showEnd() {
       const n = Object.values(h.solved).filter(Boolean).length;
       r = `<span class="r ${n === per ? "ok" : ""}">${n}/${per}</span>`;
     } else {
-      r = `<span class="r">${h.attempts.filter(a => a.gained.length).map(a =>
-        `<span class="dot p${a.player + 1}"></span> +${a.gained.length}`).join("&nbsp; ") || "—"}</span>`;
+      const got = h.attempts.filter(a => a.gained.length);
+      r = `<span class="r vs">${got.map(a =>
+        `<span class="pill p${a.player + 1}">${esc(g.names[a.player])} +${a.gained.length}</span>`).join("") || `<span class="pill none">nobody</span>`}</span>`;
     }
     return `<div class="item"><div class="thumb" style="background-image:url('${esc(h.data.artwork.replace("600x600bb", "100x100bb"))}')"></div>
       <div style="min-width:0"><div class="t">${esc(h.song.title)}</div><div class="a">${esc(h.song.artist)}</div></div>${r}</div>`;
